@@ -10,14 +10,13 @@ def get_reviews(query, rt):
             title - title of first match (str)
             date_string - Theatrical Release date of first match (str)
             id_list - RottenTomatoes movie ID as list (list)
+            review_list - list of review dictionaries (list)
     '''
     MAX_PAGES = 25
     PAGE_LIMIT = 50
     
     page = 1
     page_count = 0
-    total_reviews = 0
-    latest_review = ""
     status = 200
     
     title = ''
@@ -64,26 +63,17 @@ def get_reviews(query, rt):
             count_on_this_page = len(more_reviews)
             #print 'Found', count_on_this_page, 'on page', page
             for review in more_reviews:
-                total_reviews += 1
                 d = review
                 d['id'] = id
                 review_list.append(d)
 
-                    
-                #items_left -= 50
-            latest_review = review['critic']
             page += 1
             page_count += 1
 
         else:
-            if status == 403:
-                print "Sleepy..."
-                # account for rate limiting
-                time.sleep(2)
-            else:
-                print "ERRORS: " + str(status)
-                return count, title, date_string, id_list, review_list
-    return count, title, date_string, id_list, review_list
+            print "ERROR STATUS: " + str(status)
+            return count, title, date_string, id_list, review_list
+return count, title, date_string, id_list, review_list
 
 def parse_rating(rating_string):
     '''
