@@ -2,34 +2,33 @@ import pickle
 import numpy as np
 import time
 
-def get_reviews(query, rt):
+def get_movie(rt, query):
     '''
-    input:  query - movie search term (str)
-            rt - instance of RT class (RT)
+    Get movie data from Rotten Tomatoes movie search
+    input:  rt - instance of RT class (RT)
+            query - movie search term (str)
+            
     output: count - number of movies found (int) 
             title - title of first match (str)
             date_string - Theatrical Release date of first match (str)
+            fresh_score - RottenTomatoes freshness score (str)       
             id_list - RottenTomatoes movie ID as list (list)
-            review_list - list of review dictionaries (list)
     '''
-    MAX_PAGES = 25
-    PAGE_LIMIT = 50
-    
-    page = 1
-    page_count = 0
+
     status = 200
     
     title = ''
     date_string = ''
     id_list = []
     review_list = []
+    fresh_score = ''
     
     movies = rt.search(query,status=status, page_limit=50, page=1)
     #add error handling here
     if (status != 200) or not movies:
         print "Couldn't find any movies"
         count = 0
-        return count, title, date_string, id_list, review_list
+        return count, title, date_string, fresh_score, id_list
     movie = movies[0]
     count = len(movies)
     
@@ -40,40 +39,62 @@ def get_reviews(query, rt):
         date_string = movie['release_dates']['theater']
     except KeyError:
         pass
-    count_on_this_page = PAGE_LIMIT
-    
-    
-    d = {}
-    d['id'] = id
-    d['critic'] = 'Fresh'
     if 'critics_score' in movie['ratings']:
-        d['original_score'] = str(movie['ratings']['critics_score'])+'/100'
-    review_list.append(d)
-   # let us loop (and hopefully not hit our rate limit)
+        fresh_score = str(movie['ratings']['critics_score'])
+    return count, title, date_string, fresh_score, id_list
+ 
+def get_reviews(rt, id, fresh_score):
+    '''
+    Get RottenTomatoes reviews from a movie ID
+    input:  rt - instance of RT class (RT)
+            id - RottenTomatoes movie id code (str)
+            fresh_score - RottenTomatoes freshness score (str) 
+            
+    output: total_stated - number of reviews as reported by RottenTomatoes (int)
+            total_items - actual number of reviews found (int)
+            final_page - number of review pages collected (int)
+    '''
+    MAX_PAGES = 25
+    PAGE_LIMIT = 50
+    
+    page = 1
+    page_count = 0
+    count_on_this_page = PAGE_LIMIT
+
+    review_list = []
+    d = {}
+    d['critic'] = 'Fresh'
+    if fresh_score:
+        d['original_score'] = fresh_score+'/100' 
+        review_list.append(d)   
+    # let us loop (and hopefully not hit our rate limit)
     while (count_on_this_page == PAGE_LIMIT) and (page_count < MAX_PAGES):
         if page_count == 4:
             time.sleep(1) # RottenTomatoes rate limits to 5 calls per second
         status = 200
-        more_reviews = rt.info(id, status, review_type='all', page_limit=PAGE_LIMIT, page=str(page))
+        total_stated, more_reviews = rt.info(id, status, review_type='all', page_limit=PAGE_LIMIT, page=str(page))
         # make sure it was successful
         if status == 200:
-            if more_reviews == []:
-                print 'Found nothing on page', page, 'for movie', id
-                return count, title, date_string, id_list, review_list
-            count_on_this_page = len(more_reviews)
-            #print 'Found', count_on_this_page, 'on page', page
-            for review in more_reviews:
-                d = review
-                d['id'] = id
-                review_list.append(d)
+            if more_reviews:
+                count_on_this_page = len(more_reviews)    
+                review_list += more_reviews
+                page += 1
+                page_count += 1
 
-            page += 1
-            page_count += 1
+            else:
+                print 'Found nothing on page', page, 'for movie', id
+                count_on_this_page = 0
+
 
         else:
             print "ERROR STATUS: " + str(status)
-            return count, title, date_string, id_list, review_list
-return count, title, date_string, id_list, review_list
+            count_on_this_page = 0
+    
+    # Need to added movie id so we can add this to a DB or matrix
+    if review_list:
+        for i in range(len(review_list)):
+            review_list[i]['id'] = id
+    return total_stated, page_count, review_list
 
 def parse_rating(rating_string):
     '''
@@ -92,14 +113,16 @@ def parse_rating(rating_string):
             pass
     return score
 
-def build_matrix(collection, movie_list, critics, fillzeroes=True):
+def build_matrix(collection, movie_list, critics, fillzeros=True):
     '''
     Convert data from a list or MongoDB to entries in a (num movies) x (num critics) matrix
-    Ratings data ranges from 1 - 9; Missing data is 0 or NaN depending on fillna flag
+    Ratings data ranges from 1 - 9; Missing data is 0 or NaN depending on fillzeros flag
     input:  collection - list or MongoDB collection (list or )
             movie_list - labels for rows of output matrix (list)
             critics - labels for columns of output matrix (list)
             fillzeros - replace NaNs with zeroes (Boolean)
+    output: r_count - total number of ratings parsed (int)
+            M - (num movies) x (num critics) matrix of ratings (numpy array)
     '''
     M = np.empty((len(movie_list), len(critics)))
     movie_to_index = dict(zip(movie_list, range(len(movie_list))))
@@ -123,7 +146,7 @@ def build_matrix(collection, movie_list, critics, fillzeroes=True):
                 M[i, j] = rating
                 r_count += 1
     M = M*8 + 1 # scores now are integers from 1 - 9
-    if fillna:
+    if fillzeros:
         M = np.nan_to_num(M)
     print 'Number of entries:', r_count
     print 'Shape of matrix:', np.shape(M)

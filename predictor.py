@@ -27,8 +27,10 @@ class MovieRecommender(YhatModel):
         Ebert = False
         pred = False
         proba = 0
-        count, title, date_string, id_list, review_list = le.get_reviews(str(movie), rt)
+        count, title, date_string, fresh_score, id_list = le.get_movie(rt, str(movie))
+
         if count > 0:
+            total, last_page, review_list = le.get_reviews(rt, id_list[0], fresh_score)
             entries, A = le.build_matrix(review_list, id_list, critic_list, fillzeros=True)
             if entries > 0:
                 X_test, y_test = A[:,:-1], A[:,-1]

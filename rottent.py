@@ -143,8 +143,8 @@ class RT(object):
         #movie_url.extend(end_of_url)
         data = self._load_json_from_url(''.join(movie_url), status)
         if data == None:
-            return None        
-        return data[datatype]
+            return 0, None        
+        return data['total'], data[datatype]
 
     def new(self, kind='movies', **kwargs):
         """
